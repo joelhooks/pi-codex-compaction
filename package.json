@@ -1,0 +1,26 @@
+{
+  "name": "pi-codex-compaction",
+  "private": true,
+  "type": "module",
+  "description": "Codex-style compaction lifecycle extension for Pi",
+  "scripts": {
+    "test": "tsx --test test/**/*.test.ts",
+    "demo": "tsx src/prototype/compaction-machine.ts",
+    "demo:preturn": "tsx src/prototype/compaction-machine.ts preturn",
+    "demo:midturn": "tsx src/prototype/compaction-machine.ts midturn",
+    "demo:overflow": "tsx src/prototype/compaction-machine.ts overflow",
+    "demo:tool-puke": "tsx src/prototype/compaction-machine.ts tool-puke"
+  },
+  "dependencies": {
+    "xstate": "^5.20.2"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}
