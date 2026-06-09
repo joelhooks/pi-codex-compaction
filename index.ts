@@ -4,17 +4,21 @@ import { compact } from "@mariozechner/pi-coding-agent";
 import {
   canTriggerCompaction,
   chooseCompactionReason,
+  chooseToolResultRewriteReason,
   countOversizedToolResults,
   createLifecycleMachine,
   debugLog,
   durableCaptureReminder,
+  rewriteToolResultContent,
   statusLine,
+  toolResultText,
   tuningFromEnv,
 } from "./src/extension-core.js";
 
 export default function piCodexCompaction(pi: ExtensionAPI) {
   const tuning = tuningFromEnv();
   const actor = createActor(createLifecycleMachine()).start();
+  let toolLoopResultChars = 0;
 
   function updateStatus(ctx: { ui?: { setStatus?: (key: string, value: string) => void } }) {
     ctx.ui?.setStatus?.("codex-compaction", statusLine(actor.getSnapshot().context));
@@ -22,6 +26,65 @@ export default function piCodexCompaction(pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     updateStatus(ctx);
+  });
+
+  pi.on("agent_start", async (_event, ctx) => {
+    toolLoopResultChars = 0;
+    updateStatus(ctx);
+  });
+
+  pi.on("turn_start", async (_event, ctx) => {
+    updateStatus(ctx);
+  });
+
+  pi.on("tool_result", async (event, ctx) => {
+    const resultChars = toolResultText(event.content).length;
+    const reason = chooseToolResultRewriteReason({ resultChars, toolLoopResultChars, tuning });
+    if (!reason) {
+      toolLoopResultChars += resultChars;
+      return undefined;
+    }
+
+    const rewritten = rewriteToolResultContent({
+      toolName: event.toolName,
+      toolCallId: event.toolCallId,
+      input: event.input,
+      content: event.content,
+      reason,
+      tuning,
+    });
+
+    if (!rewritten) {
+      toolLoopResultChars += resultChars;
+      return undefined;
+    }
+
+    actor.send({ type: "TOOL_REWRITE" });
+    toolLoopResultChars += rewritten.replacementChars;
+    debugLog("tool_result_rewrite", {
+      toolName: event.toolName,
+      toolCallId: event.toolCallId,
+      reason,
+      originalChars: rewritten.originalChars,
+      replacementChars: rewritten.replacementChars,
+      toolLoopResultChars,
+      state: actor.getSnapshot().context,
+    });
+    updateStatus(ctx);
+
+    return {
+      content: rewritten.content,
+      details: {
+        ...(typeof event.details === "object" && event.details !== null ? event.details : { originalDetails: event.details }),
+        codexCompactionRewrite: {
+          version: 1,
+          reason,
+          originalChars: rewritten.originalChars,
+          replacementChars: rewritten.replacementChars,
+          tuning,
+        },
+      },
+    };
   });
 
   async function runOwnerCompaction(ctx: ExtensionContext, reason: string) {
@@ -70,9 +133,9 @@ export default function piCodexCompaction(pi: ExtensionAPI) {
     }
 
     const now = Date.now();
-    if (!canTriggerCompaction({ context: actor.getSnapshot().context, now, tuning })) {
+    if (!canTriggerCompaction({ context: actor.getSnapshot().context, now, tuning, force: reason === "hard_budget" })) {
       actor.send({ type: "SKIP" });
-      debugLog("proactive_skip", { reason: "cooldown_or_inflight", state: actor.getSnapshot().context });
+      debugLog("proactive_skip", { reason: "cooldown_or_inflight", compactionReason: reason, state: actor.getSnapshot().context });
       updateStatus(ctx);
       return undefined;
     }

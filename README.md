@@ -7,10 +7,11 @@ This is installed locally on Joel's machine as a Pi package. It owns proactive c
 ## Behavior
 
 - Runs owner-mode compaction before a turn when context pressure crosses the configured threshold.
+- Diets oversized/cumulative tool results during active agent tool loops so a humming agent does not puke 50KB chunks into every follow-up model call.
 - Customizes manual `/compact` and extension-triggered compaction through `session_before_compact`.
 - Produces concise resume checkpoints, not verbose transcripts.
 - Preserves objective, constraints, changed/read files, important commands/results, errors, decisions, and next action.
-- Records `details.codexStyleCompaction` on compaction entries for receipts.
+- Records `details.codexStyleCompaction` on compaction entries and `details.codexCompactionRewrite` on dieted tool results for receipts.
 - Uses a small XState lifecycle machine for `idle -> scheduled -> compacting -> cooldown` instead of boolean soup.
 
 ## Defaults
@@ -20,10 +21,15 @@ Because Pi's built-in autocompact is currently off, proactive owner mode default
 | Setting | Default | Env |
 | --- | ---: | --- |
 | Owner-mode proactive compaction | on | `PI_CODEX_COMPACTION_PROACTIVE=0` disables |
-| Pre-turn compaction threshold | `80%` | `PI_CODEX_COMPACTION_PRETURN_PERCENT=80` |
-| Queued/pending seam threshold | `65%` | `PI_CODEX_COMPACTION_QUEUED_PERCENT=65` |
+| Pre-turn compaction threshold | `50%` | `PI_CODEX_COMPACTION_PRETURN_PERCENT=50` |
+| Queued/pending seam threshold | `40%` | `PI_CODEX_COMPACTION_QUEUED_PERCENT=40` |
+| Hard budget threshold | `65%` | `PI_CODEX_COMPACTION_HARD_PERCENT=65` |
 | Cooldown | `60000ms` | `PI_CODEX_COMPACTION_COOLDOWN_MS=60000` |
-| Oversized tool-result rewrite marker | `8000 chars` | `PI_CODEX_COMPACTION_TOOL_OUTPUT_CHARS=8000` |
+| Single tool-result diet threshold | `24000 chars` | `PI_CODEX_COMPACTION_TOOL_OUTPUT_CHARS=24000` |
+| Per-agent-loop tool-result budget | `48000 chars` | `PI_CODEX_COMPACTION_TOOL_LOOP_OUTPUT_CHARS=48000` |
+| Dieted tool-result preview | `6000 chars` | `PI_CODEX_COMPACTION_TOOL_OUTPUT_PREVIEW_CHARS=6000` |
+
+The hard budget ignores cooldown but still refuses concurrent compactions. That gives us hysteresis: normal seams compact early, cooldown prevents loops, and the hard ceiling still saves us when a task suddenly gets fat. The old `PI_CODEX_COMPACTION_TURN_TOOL_OUTPUT_CHARS` env name is still accepted as a fallback.
 
 If Pi's built-in autocompact is re-enabled, disable owner mode to avoid competing compaction triggers:
 
